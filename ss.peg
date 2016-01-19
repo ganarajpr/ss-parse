@@ -1,0 +1,150 @@
+{ function makeInteger(o) { return parseInt(o.join(""), 10); } }
+
+start = gambit
+
+star = "*"
+
+starn = "*" val:integer { return { type : "starn", value : val }; }
+
+starupton = "*~" val:integer { return { type : "starupton", value : val }; }
+
+starminmax = "(" ws min:integer ws* "," ws* max:integer ws* ")" { return { type : "minmax", val:{ min: min, max: max } }; }
+
+string = str:[a-zA-Z]+ { return str.join(""); }
+
+alternatives = alt:stringOrDigit ws* "|" { return alt; }
+alternates = "(" ws* start:stringOrDigit ws* "|" mid:alternatives* ws* end:stringOrDigit ")" { 
+   var arr = []; arr.push(start); arr = arr.concat(mid); arr.push(end); return arr; 
+   }
+   
+   
+optional = "[" ws* opt:stringOrDigit ws* "]" { return opt; }  
+
+expand = "~" word:string { return word; }
+
+kind = "noun"
+     / "verb"
+     / "adjective"
+     / "pronoun"
+     / "adverb"
+     / "name"
+
+grammar = kind:kind follow:[0-9|"s"]* { return { type: "pos", kind :kind, val: follow.join("") }; } 
+
+pos = "<" gram:grammar ">" ws* { return gram; }
+
+gambit = trig:trigger rep:replies+ { return { type : "gambit", trigger : trig, replies: rep }; }
+
+
+triggerTokens = starn:starn ws* { return starn;} 
+                / starupton:starupton ws* { return starupton;} 
+                / starminmax:starminmax ws* { return starminmax;} 
+                / st:star ws* { return {type : "star", val : "" }; } 
+                / string:stringOrDigit ws* { return { type : "text", val: string } }
+                / alt:alternates ws* {return { type : "alternate", val : alt}}
+                / opt:optional ws* {return { type : "optional", val : opt}}
+                / exp:expand ws* {return { type : "expand", val : exp}}
+                / pos:pos ws* { return pos; }
+
+
+trigger = "+" ws+ trigs:triggerTokens+ ws* nl* { return {type: "trigger", kind : "normal", val: trigs}}
+        / "?:WH" ws+ trigs:triggerTokens+ ws* nl* { return {type: "trigger", kind : "WH", val: trigs}}
+        / "?:CH" ws+ trigs:triggerTokens+ ws* nl* { return {type: "trigger", kind : "CH", val: trigs}}
+        / "?:" cat:category ws+ trigs:triggerTokens+ ws* nl*  { return {type: "trigger", kind : "category", category:cat, val: trigs}}
+
+replyTokens = string:stringOrDigit ws* { return { type : "text", val: string } }
+            / alt:alternates ws* {return { type : "alternate", val : alt}}
+            / cap:capture ws* {return { type : "capture", val : cap}}
+            / redi:redirect ws* {return { type : "redirect", val : redi}}
+            
+keepFlag = keep:"{keep}"? { return keep ? true : false; }             
+
+capture = "<cap" int:integer* ">" { return int.length ? int[0] : 1; }
+
+redirect = "{@" str:stringOrDigit+ "}" { return str; } 
+
+replies = "-" ws+ keep:keepFlag rep:replyTokens+ ws* nl* { return { type : "reply", value: rep, keep:keep} }
+
+category = cat:categories { return { category : cat, sub: null }; }
+         / cat:"NUM" ":" sub:numcat { return { category : cat, sub: sub }; }
+         / cat:"LOC" ":" sub:loccat { return { category : cat, sub: sub }; }
+         / cat:"HUM" ":" sub:humcat { return { category : cat, sub: sub }; }
+         / cat:"DESC" ":" sub:descat { return { category : cat, sub: sub }; }
+         / cat:"ENTY" ":" sub:entcat { return { category : cat, sub: sub }; }
+         / cat:"ABBR" ":" sub:abrcat { return { category : cat, sub: sub }; }
+        
+stringOrDigit = str:[a-zA-Z0-9.,!_]+ {  return str.join("") }        
+
+integer "integer" = digits:[0-9]+ { return makeInteger(digits); }
+
+ws "whitespace" = [ \t]
+
+nl "newline" = [\n\r]
+
+
+categories = "ABBR"
+           / "ENTY"
+           / "DESC"
+           / "HUM"
+           / "LOC"
+           / "NUM"
+
+
+numcat = "code"
+       / "count"
+       / "expression"
+       / "date"
+       / "distance"
+       / "money"
+       / "order"
+       / "other"
+       / "period"
+       / "percent"
+       / "speed"
+       / "temp"
+       / "size"
+       / "weight"
+       
+
+
+loccat = "city"
+       / "country"
+       / "mountain"
+       / "other"
+       / "state"
+       
+
+humcat = "group"
+       / "ind"
+       / "title"
+       / "desc"
+       
+descat = "def"
+       / "desc"
+       / "manner"
+       / "reason"
+       
+entcat = "animal"
+       / "body"
+       / "color"
+       / "creative"
+       / "currency"
+       / "event"
+       / "food"
+       / "instrument"
+       / "lang"
+       / "letter"
+       / "other"
+       / "plant"
+       / "product"
+       / "religion"       
+       / "sport"       
+       / "substance"       
+       / "symbol"       
+       / "technique"       
+       / "term"       
+       / "vehicle"       
+       / "word"     
+       
+abrcat = "abb"
+       / "exp"       
