@@ -1,6 +1,126 @@
-{ function makeInteger(o) { return parseInt(o.join(""), 10); } }
+{ 
+   function makeInteger(o) { return parseInt(o.join(""), 10); } 
+   function getTrigger(kind,val,weight){
+      return { 
+          type: "trigger",
+          kind: kind,
+          val: val,
+          weight: weight
+      };
+   }
+   function combineArrays(arr1,arr2){
+      var finalArray = []
+      if(arr1 && arr1.length) {
+         finalArray = finalArray.concat(arr1);
+      }
+      if(arr2 && arr2.length) {
+         finalArray = finalArray.concat(arr2);
+      }
+      return finalArray;
+      
+   }
+}
 
-start = gambit
+start = ws* nl* topnodes:topnodes* { return topnodes; }
+
+topnodes = gambit:gambit { return gambit; }
+         / topic:topic { return topic; }
+
+topic = "> topic" flags:topicFlag* ws+ topicName:stringOrDigit ws+ keywords:topicKeyword? nl+ gambits:gambit+ "< topic" ws* nl*  { return {
+                    type : "topic",
+                    flags: flags,
+                    name : topicName,
+                    keywords: keywords,
+                    gambits : gambits
+                }; 
+          }
+
+
+keyword = str:stringOrDigit ws* { return str; }
+
+topicKeyword = "(" ws* keywords:keyword+ ")" { return keywords; }
+
+topicFlag = ":system" { return "system"; }
+          / ":keep" { return "keep"; }
+          / ":nostay" { return "nostay"; }
+
+
+gambit = ws* trig:trigger nl+ ws* thread:(thread nl+)? ws* rep:replies+ { 
+          
+         return { 
+               type : "gambit", 
+               trigger : trig,
+               replies: rep,
+               thread : thread[0]
+         }; 
+               }
+
+triggerTokens = starn:starn ws* { return starn;} 
+                / starupton:starupton ws* { return starupton;} 
+                / starminmax:starminmax ws* { return starminmax;} 
+                / st:star ws* { return {type : "star", val : "" }; } 
+                / string:stringOrDigit ws* { return { type : "text", val: string } }
+                / alt:alternates ws* {return { type : "alternate", val : alt}}
+                / opt:optional ws* {return { type : "optional", val : opt}}
+                / exp:expand ws* {return { type : "expand", val : exp}}
+                / pos:pos ws* { return pos; }
+
+
+weight = "{weight=" weight:integer "}" { return weight; }
+
+trigger = "+" ws+ trigs:triggerTokens+ ws* weight:weight? ws*  { return getTrigger("normal",trigs,weight);}
+        / "?:WH" ws+ trigs:triggerTokens+ ws* weight:weight? ws* { return getTrigger("WH",trigs,weight);}
+        / "?:CH" ws+ trigs:triggerTokens+ ws* weight:weight? ws* { return getTrigger("CH",trigs,weight);}
+        / "?:" cat:category ws+ trigs:triggerTokens+ ws* weight:weight? ws*  { return getTrigger(cat,trigs,weight);}
+
+replyTokens = string:stringOrDigit ws* { return { type : "text", val: string } }
+            / alt:alternates ws* {return { type : "alternate", val : alt}}
+            / cap:capture ws* {return { type : "capture", val : cap}}
+            / redi:redirect ws* {return { type : "redirect", val : redi}}
+            / topic:changeTopic ws* {return { type : "changetopic", val : topic}}
+            / fn:fn ws* {return fn; }
+            / fn:filter ws* {return fn; }
+            
+changeTopic = "{topic=" topicName:stringOrDigit "}" { return topicName; }           
+            
+keepFlag = keep:"{keep}"? { return keep ? true : false; }             
+
+capture = "<cap" int:integer* ">" { return int.length ? int[0] : 1; }
+
+redirect = "{@" str:stringOrDigit+ "}" { return str; } 
+
+thread = "%" ws+ trigs:triggerTokens+ ws*  { return {type: "thread", val: trigs}} 
+
+replies = "-" ws+ keep:keepFlag rep:replyTokens+ ws* nl* { return { type : "reply", value: rep, keep:keep} }
+
+vname = first:[a-zA-Z_] rest:[a-zA-Z0-9_]* { return rest ? first + rest : first;  }
+
+
+argTokens = str:stringOrDigit {return { type : "text", val : str}}
+          / cap:capture {return { type : "capture", val : cap}}
+          
+          
+restargs = ws* "," ws* arg:argTokens { return arg; }          
+
+args = arg:argTokens? rest:restargs* { arg = arg ? [arg] : []; return combineArrays(arg,rest); }
+
+
+fn = "^" fname:vname ws? "(" args:args ")" { return { type: "function", name : fname, args: args, isfilter: false } }
+
+
+filter = "{" fn:fn "}" { fn.isfilter = true; return fn; }
+
+category = cat:categories { return { category : cat, sub: null }; }
+         / cat:"NUM" ":" sub:numcat { return { category : cat, sub: sub }; }
+         / cat:"LOC" ":" sub:loccat { return { category : cat, sub: sub }; }
+         / cat:"HUM" ":" sub:humcat { return { category : cat, sub: sub }; }
+         / cat:"DESC" ":" sub:descat { return { category : cat, sub: sub }; }
+         / cat:"ENTY" ":" sub:entcat { return { category : cat, sub: sub }; }
+         / cat:"ABBR" ":" sub:abrcat { return { category : cat, sub: sub }; }
+        
+stringOrDigit = str:[a-zA-Z0-9.,!_]+ {  return str.join("") }        
+
+integer "integer" = digits:[0-9]+ { return makeInteger(digits); }
 
 star = "*"
 
@@ -14,7 +134,7 @@ string = str:[a-zA-Z]+ { return str.join(""); }
 
 alternatives = alt:stringOrDigit ws* "|" { return alt; }
 alternates = "(" ws* start:stringOrDigit ws* "|" mid:alternatives* ws* end:stringOrDigit ")" { 
-   var arr = []; arr.push(start); arr = arr.concat(mid); arr.push(end); return arr; 
+      return combineArrays(combineArrays([start],mid),[end]);
    }
    
    
@@ -32,50 +152,6 @@ kind = "noun"
 grammar = kind:kind follow:[0-9|"s"]* { return { type: "pos", kind :kind, val: follow.join("") }; } 
 
 pos = "<" gram:grammar ">" ws* { return gram; }
-
-gambit = trig:trigger rep:replies+ { return { type : "gambit", trigger : trig, replies: rep }; }
-
-
-triggerTokens = starn:starn ws* { return starn;} 
-                / starupton:starupton ws* { return starupton;} 
-                / starminmax:starminmax ws* { return starminmax;} 
-                / st:star ws* { return {type : "star", val : "" }; } 
-                / string:stringOrDigit ws* { return { type : "text", val: string } }
-                / alt:alternates ws* {return { type : "alternate", val : alt}}
-                / opt:optional ws* {return { type : "optional", val : opt}}
-                / exp:expand ws* {return { type : "expand", val : exp}}
-                / pos:pos ws* { return pos; }
-
-
-trigger = "+" ws+ trigs:triggerTokens+ ws* nl* { return {type: "trigger", kind : "normal", val: trigs}}
-        / "?:WH" ws+ trigs:triggerTokens+ ws* nl* { return {type: "trigger", kind : "WH", val: trigs}}
-        / "?:CH" ws+ trigs:triggerTokens+ ws* nl* { return {type: "trigger", kind : "CH", val: trigs}}
-        / "?:" cat:category ws+ trigs:triggerTokens+ ws* nl*  { return {type: "trigger", kind : "category", category:cat, val: trigs}}
-
-replyTokens = string:stringOrDigit ws* { return { type : "text", val: string } }
-            / alt:alternates ws* {return { type : "alternate", val : alt}}
-            / cap:capture ws* {return { type : "capture", val : cap}}
-            / redi:redirect ws* {return { type : "redirect", val : redi}}
-            
-keepFlag = keep:"{keep}"? { return keep ? true : false; }             
-
-capture = "<cap" int:integer* ">" { return int.length ? int[0] : 1; }
-
-redirect = "{@" str:stringOrDigit+ "}" { return str; } 
-
-replies = "-" ws+ keep:keepFlag rep:replyTokens+ ws* nl* { return { type : "reply", value: rep, keep:keep} }
-
-category = cat:categories { return { category : cat, sub: null }; }
-         / cat:"NUM" ":" sub:numcat { return { category : cat, sub: sub }; }
-         / cat:"LOC" ":" sub:loccat { return { category : cat, sub: sub }; }
-         / cat:"HUM" ":" sub:humcat { return { category : cat, sub: sub }; }
-         / cat:"DESC" ":" sub:descat { return { category : cat, sub: sub }; }
-         / cat:"ENTY" ":" sub:entcat { return { category : cat, sub: sub }; }
-         / cat:"ABBR" ":" sub:abrcat { return { category : cat, sub: sub }; }
-        
-stringOrDigit = str:[a-zA-Z0-9.,!_]+ {  return str.join("") }        
-
-integer "integer" = digits:[0-9]+ { return makeInteger(digits); }
 
 ws "whitespace" = [ \t]
 
